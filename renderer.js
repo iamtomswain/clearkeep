@@ -180,6 +180,15 @@ function cleanName(s) {
   return t.replace(/[ \t]{2,}/g, " ").trim();
 }
 function acctById(id) { return accountsList.find((a) => a.id === id); }
+// Feature gating by backend capability (caps come from capsFor() in main.js:
+// search / important / needs / ask / write / send / organize / cleanup). Falls
+// back to a provider heuristic if caps are absent (older record) so Yahoo — which
+// historically did everything — never regresses.
+function supports(acc, feat) {
+  if (!acc) return false;
+  if (acc.caps && Object.prototype.hasOwnProperty.call(acc.caps, feat)) return !!acc.caps[feat];
+  return acc.provider === "yahoo";
+}
 function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -1002,14 +1011,14 @@ let unsubScanTimer = null, unsubScanning = false;
 function maybeScanUnsub() {
   if (state.view.type === "sent" || state.view.type === "cleanup") return; // unsub is meaningless here
   const acc = acctById(state.activeAccount);
-  if (!acc || acc.provider !== "yahoo" || !api.unsubScan) return; // header-probe is IMAP-only
+  if (!acc || !supports(acc, "unsubChips") || !api.unsubScan) return; // inline header chips are IMAP-only
   clearTimeout(unsubScanTimer);
   unsubScanTimer = setTimeout(runUnsubScan, 300);
 }
 async function runUnsubScan() {
   if (unsubScanning) return;
   const acc = acctById(state.activeAccount);
-  if (!acc || acc.provider !== "yahoo") return;
+  if (!acc || !supports(acc, "unsubChips")) return;
   const pending = [];
   for (const r of document.querySelectorAll("#message-list .msg-row")) {
     const m = findMsg(r.dataset.id);
@@ -2000,7 +2009,7 @@ async function themeFile() {
   toast(`Filing ${addresses.length} sender${addresses.length === 1 ? "" : "s"} into “${name}”…`, { sticky: true });
   try {
     const res = await api.fileThemeFolder({ accountId: state.activeAccount, name, addresses });
-    if (!res.ok) { toast(`Couldn’t create folder: ${res.error}`, { error: true }); return; }
+    if (!res.ok) { toast(`Couldn’t file into “${name}”: ${res.error}`, { error: true }); return; }
     const id = res.folder && res.folder.id;
     await loadInbox(); await loadFolders(); renderAll();
     toast(`Filed ${res.filed} email${res.filed === 1 ? "" : "s"} into “${name}”`, { label: "Undo", fn: async () => {
@@ -2009,7 +2018,7 @@ async function themeFile() {
       await loadInbox(); await loadFolders(); renderAll();
       toast(`Removed “${name}” — mail returned to inbox`);
     } });
-  } catch (e) { toast(`Couldn’t create folder: ${e.message}`, { error: true }); }
+  } catch (e) { toast(`Couldn’t file into “${name}”: ${e.message}`, { error: true }); }
 }
 // Create an empty folder (no theme match, no filing) — a manual "file it later"
 // folder. Reads the name from the input (name step) or the carried theme name (review).
@@ -2260,7 +2269,7 @@ async function loadImportant() {
 // when nothing's new (the backend does no AI work then). Yahoo only.
 async function classifyNewImportant() {
   const acc = acctById(state.activeAccount);
-  if (!acc || acc.provider !== "yahoo" || importantPolling || needsScanning || askUI.phase === "thinking" || imp.phase === "scanning" || !api.importantClassifyNew) return;
+  if (!acc || !supports(acc, "important") || importantPolling || needsScanning || askUI.phase === "thinking" || imp.phase === "scanning" || !api.importantClassifyNew) return;
   importantPolling = true;
   try {
     const r = await api.importantClassifyNew({ accountId: state.activeAccount });
@@ -2317,7 +2326,7 @@ function impRowHtml(it) {
 }
 function renderImpMailbox(el) {
   const acc = acctById(state.activeAccount);
-  const supported = acc && acc.provider === "yahoo";
+  const supported = supports(acc, "important");
   const items = importantItems.slice().sort((a, b) => ((b.source && b.source.dateMs) || 0) - ((a.source && a.source.dateMs) || 0));
   el.innerHTML = `<div class="ki-pane">
     <div class="ki-header imp-header">
@@ -2330,7 +2339,7 @@ function renderImpMailbox(el) {
     <div class="ki-scroll">
       ${items.length
         ? items.map(impRowHtml).join("")
-        : `<div class="ki-empty">${supported ? "Nothing flagged yet. New important mail appears here automatically — or hit <b>Search inbox for more</b> to check your whole inbox now." : "This works on Yahoo accounts right now."}</div>`}
+        : `<div class="ki-empty">${supported ? "Nothing flagged yet. New important mail appears here automatically — or hit <b>Search inbox for more</b> to check your whole inbox now." : "This works on Yahoo and Zoho accounts right now."}</div>`}
     </div>
   </div>`;
   hydrateAvatars(el);
@@ -2538,7 +2547,7 @@ function freshTemporal(it) {
 const REMIND_RANK = { "": 0, soon: 1, overdue: 2 };
 function remindTick() {
   const acc = acctById(state.activeAccount);
-  if (!acc || acc.provider !== "yahoo" || !needsItems.length) return;
+  if (!acc || !supports(acc, "needs") || !needsItems.length) return;
   const now = Date.now();
   const fired = [];
   for (const it of needsItems) {
@@ -2588,7 +2597,7 @@ function notifyReminders(fired) {
 function needsRefreshKey(acctId) { return `clearkeep.needsRefresh.${acctId}`; }
 async function silentNeedsRefresh() {
   const acc = acctById(state.activeAccount);
-  if (!acc || acc.provider !== "yahoo") return;
+  if (!acc || !supports(acc, "needs")) return;
   if (needsScanning || importantPolling || needsUI.phase === "scanning") return;
   needsScanning = true;
   const acctId = acc.id;
@@ -2606,7 +2615,7 @@ async function silentNeedsRefresh() {
 }
 function maybeRefreshNeeds() {
   const acc = acctById(state.activeAccount);
-  if (!acc || acc.provider !== "yahoo") return;
+  if (!acc || !supports(acc, "needs")) return;
   let last = 0; try { last = parseInt(localStorage.getItem(needsRefreshKey(acc.id)) || "0", 10) || 0; } catch {}
   if (!last) return;                               // never scanned → respect the opt-in; don't read bodies
   if (Date.now() - last > CFG.needsRefreshStaleMs) silentNeedsRefresh();
@@ -2649,9 +2658,9 @@ function renderNyScan(el) {
 
 function renderNyList(el) {
   const acc = acctById(state.activeAccount);
-  const supported = acc && acc.provider === "yahoo";
+  const supported = supports(acc, "needs");
   if (!supported) {
-    el.innerHTML = `<div class="cu-wrap"><div class="cu-status"><div class="cu-status-title">Needs you</div><div class="cu-status-sub">This works on Yahoo accounts right now.</div></div></div>`;
+    el.innerHTML = `<div class="cu-wrap"><div class="cu-status"><div class="cu-status-title">Needs you</div><div class="cu-status-sub">This works on Yahoo and Zoho accounts right now.</div></div></div>`;
     return;
   }
   // Intro: nothing scanned yet (no stored items).
@@ -2783,7 +2792,7 @@ function renderAsk() {
   const el = $("#ask-view");
   if (!el || state.view.type !== "ask") return;
   const acc = acctById(state.activeAccount);
-  const supported = acc && acc.provider === "yahoo";
+  const supported = supports(acc, "ask");
   const thinking = askUI.phase === "thinking";
   const hasThread = askHistory.length || thinking;
 
@@ -2805,7 +2814,7 @@ function renderAsk() {
     <div class="ask-chips">${chips}</div>
   </div>`;
 
-  const unsupported = `<div class="ask-welcome"><div class="ask-welcome-av">${svgAsk()}</div><div class="ask-welcome-title">Ask works on Yahoo right now</div><div class="ask-welcome-sub">Switch to your Yahoo account to ask questions about your mail.</div></div>`;
+  const unsupported = `<div class="ask-welcome"><div class="ask-welcome-av">${svgAsk()}</div><div class="ask-welcome-title">Ask works on Yahoo and Zoho right now</div><div class="ask-welcome-sub">Switch to a Yahoo or Zoho account to ask questions about your mail.</div></div>`;
 
   const resetBtn = (supported && askHistory.length) ? `<button class="ask-reset" id="ask-reset" type="button" title="Start a new conversation">${svgAskReset()}<span>New chat</span></button>` : "";
 
@@ -2952,7 +2961,13 @@ function renderKeepers() {
 
 function renderKiIntro(el) {
   const acc = acctById(state.activeAccount);
-  const supported = acc && acc.provider === "yahoo";
+  // Keeper flow = scan (read) + file keepers + sweep junk (write). Needs both.
+  const canRead = supports(acc, "important");
+  const supported = canRead && supports(acc, "write");
+  const unsupportedMsg = !acc ? "Add an account to use this."
+    : canRead && !supports(acc, "write")
+      ? "This account is connected read-only. Reconnect it with write access to file and sweep mail."
+      : "This works on Yahoo and Zoho accounts. Switch accounts to use it.";
   el.innerHTML = `<div class="cu-wrap"><div class="ki-intro">
     <div class="ki-intro-icon">${svgFindImportant()}</div>
     <div class="cu-status-title">Find what matters</div>
@@ -2960,7 +2975,7 @@ function renderKiIntro(el) {
     ${supported
       ? `<button class="cu-btn cu-btn-primary" id="ki-start" type="button">Find important mail</button>
          <div class="ki-intro-note">Reads sender &amp; subject only — never the contents. Takes a few minutes.</div>`
-      : `<div class="cu-status-sub">This works on Yahoo accounts right now. Switch to a Yahoo account to use it.</div>`}
+      : `<div class="cu-status-sub">${unsupportedMsg}</div>`}
   </div></div>`;
   if (supported) { const b = $("#ki-start"); if (b) b.addEventListener("click", keepersScan); }
 }
@@ -3131,8 +3146,11 @@ const CU_TIER = {
 async function cleanupIndex() {
   if (!state.activeAccount) return;
   cleanup = freshCleanup();
-  cleanup.phase = "indexing";
   cleanup.account = state.activeAccount;
+  // Clean up needs the List-Unsubscribe header probe (IMAP-only). Show a graceful
+  // unsupported state instead of attempting a scan that can't complete.
+  if (!supports(acctById(state.activeAccount), "cleanup")) { cleanup.phase = "unsupported"; renderCleanup(); return; }
+  cleanup.phase = "indexing";
   renderCleanup();
   // Live progress: scan (messages read) → per-batch (probe + cluster). Each "batch"
   // event with rows streams them into the review table as they're produced.
@@ -3214,6 +3232,7 @@ function renderCleanup() {
   const el = $("#cleanup-view");
   if (!el) return;
   if (state.view.type !== "cleanup") return;
+  if (cleanup.phase === "unsupported") return renderCuUnsupported(el);
   if (cleanup.phase === "running")  return renderCuStatus(el, "running");
   if (cleanup.phase === "error")    return renderCuError(el);
   if (cleanup.phase === "done")     return renderCuDone(el);
@@ -3264,6 +3283,14 @@ function renderCuStatus(el, kind) {
        <div class="cu-status-title">${escapeHtml(title)}</div>
        <div class="cu-status-sub">${escapeHtml(sub)}</div>
        ${bar}
+     </div></div>`;
+}
+
+function renderCuUnsupported(el) {
+  el.innerHTML =
+    `<div class="cu-wrap"><div class="cu-status">
+       <div class="cu-status-title">Clean up</div>
+       <div class="cu-status-sub">Clean up isn’t available on this account yet. Switch to a Yahoo or Zoho account to use it.</div>
      </div></div>`;
 }
 
@@ -3531,8 +3558,9 @@ function quotedBody(m) {
   return `<br><br>On ${escapeHtml(m.time || "")}, ${escapeHtml(who)} wrote:<blockquote class="reply-quote">${quoted}</blockquote><br>`;
 }
 
-// Zoho's connected token is read-only, so it can't send. (Yahoo SMTP + Gmail API can.)
-function accountCanSend(a) { return !!a && a.provider !== "zoho"; }
+// Sending needs write capability: Yahoo SMTP + Gmail API always; Zoho only when
+// its token was granted write scope (ZohoMail.messages.ALL).
+function accountCanSend(a) { return supports(a, "send"); }
 
 function openCompose(prefill) {
   const sel = $("#compose-from");

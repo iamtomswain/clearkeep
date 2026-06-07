@@ -75,6 +75,31 @@ const BACKENDS = { zoho, gmail, yahoo: imap };
 function backendFor(provider) { const b = BACKENDS[provider]; if (!b) throw new Error("Unsupported provider: " + provider); return b; }
 function oauthFor(provider) { return accounts.getProviderOAuth(provider); } // null for yahoo (password-based)
 
+// Per-account feature capabilities — derived from each backend's method surface
+// plus, for Zoho, the granted OAuth scope. The renderer gates its AI/write UI on
+// these instead of hardcoding `provider === "yahoo"`, so every backend lights up
+// exactly the features it actually supports.
+function scopeHasWrite(provider, scope) {
+  if (provider === "yahoo" || provider === "gmail") return true; // native write (IMAP / Gmail API)
+  if (provider === "zoho") return /ZohoMail\.(messages|folders)\.(ALL|UPDATE|CREATE)/i.test(scope || "");
+  return false;
+}
+function capsFor(rec) {
+  const b = BACKENDS[rec.provider] || {};
+  const write = scopeHasWrite(rec.provider, rec.scope);
+  return {
+    search: !!b.searchAll,                                    // whole-mailbox search
+    important: !!b.inboxForScan,                              // Find important
+    needs: !!b.listPage && !!b.getContent,                    // Needs you
+    ask: !!b.inboxForScan && !!b.getContent,                  // Ask / chat
+    write,                                                    // file / move / trash
+    send: write,                                              // compose + send
+    organize: write && !!b.fileBySenders && !!b.accountSenderTally, // AI auto-organize
+    cleanup: !!b.accountSenderTally && !!b.probeUnsubscribe && !!b.purgeMany, // Clean up view (bulk unsubscribe + purge)
+    unsubChips: !!b.unsubScan,                               // inline per-row List-Unsubscribe chips (IMAP-only)
+  };
+}
+
 let mainWindow;
 
 function createWindow() {
@@ -124,7 +149,7 @@ ipcMain.handle("oauth:set", (_e, { provider, clientId, clientSecret }) => {
   catch (err) { return { ok: false, error: err.message }; }
 });
 
-ipcMain.handle("accounts:list", () => accounts.list());
+ipcMain.handle("accounts:list", () => accounts.list().map((a) => ({ ...a, caps: capsFor(a) })));
 ipcMain.handle("accounts:remove", (_e, id) => {
   const a = accounts.list().find((x) => x.id === id);
   accounts.remove(id);
@@ -140,7 +165,7 @@ ipcMain.handle("accounts:connect", async (_e, { grantCode }) => {
     const { refreshToken, scope } = await zoho.exchangeGrant(oauth, grantCode.trim());
     const info = await zoho.discoverAccount(oauth, { id: "probe", refreshToken });
     if (!info.address) return { ok: false, error: "Connected, but could not read the account address." };
-    const rec = accounts.addAccount({ provider: "zoho", address: info.address, zohoAccountId: info.zohoAccountId, refreshToken });
+    const rec = accounts.addAccount({ provider: "zoho", address: info.address, zohoAccountId: info.zohoAccountId, refreshToken, scope: scope || "" });
     zoho.clearAccountCache(rec.id);
     zoho.clearAccountCache("probe");
     return { ok: true, account: rec, scope: scope || "" };
@@ -936,6 +961,7 @@ ipcMain.handle("folders:createEmpty", async (_e, { accountId, name } = {}) => {
     try {
       if (backend && backend.ensureMailbox) await backend.ensureMailbox(acct, folder.name);
       else if (backend && backend.ensureLabel) await backend.ensureLabel(oauthFor(acct.provider), acct, folder.name);
+      else if (backend && backend.ensureFolder) await backend.ensureFolder(oauthFor(acct.provider), acct, folder.name);
     } catch (e) { return { ok: false, error: "Couldn’t create the server folder: " + e.message }; }
     return { ok: true, folder: folders.list().find((f) => f.id === folder.id) || folder };
   } catch (err) { return { ok: false, error: err.message }; }
@@ -1074,7 +1100,10 @@ ipcMain.handle("cleanup:index", async (e, { accountId } = {}) => {
   try {
     const acct = accounts.withSecret(accountId);
     const backend = acct && BACKENDS[acct.provider];
-    if (!backend || !backend.accountSenderTally) return { ok: false, error: "Clean up isn't supported on this account." };
+    // Needs BOTH the tally AND the per-sender List-Unsubscribe probe. Zoho has the
+    // tally but no header probe, so guarding on accountSenderTally alone would let
+    // it through and then crash on backend.probeUnsubscribe.
+    if (!backend || !backend.accountSenderTally || !backend.probeUnsubscribe) return { ok: false, error: "Clean up isn't supported on this account." };
     const send = (p) => { try { e.sender.send("cleanup:indexProgress", p); } catch {} };
     send({ phase: "scan", done: 0 });
     const { senders } = await backend.accountSenderTally(oauthFor(acct.provider), acct,
