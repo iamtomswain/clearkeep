@@ -207,7 +207,7 @@ ipcMain.handle("accounts:connectGoogle", async () => {
     const info = await gmail.getProfile(oauth, { id: "probe-google", refreshToken: tokens.refreshToken });
     gmail.clearAccountCache("probe-google");
     if (!info.address) return { ok: false, error: "Signed in, but couldn't read the Gmail address." };
-    const rec = accounts.addAccount({ provider: "gmail", address: info.address, refreshToken: tokens.refreshToken });
+    const rec = accounts.addAccount({ provider: "gmail", address: info.address, refreshToken: tokens.refreshToken, scope: tokens.scope || "" });
     gmail.clearAccountCache(rec.id);
     return { ok: true, account: rec };
   } catch (err) { return { ok: false, error: err.message }; }
