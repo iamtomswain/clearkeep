@@ -1,7 +1,7 @@
 {
   "name": "clearkeep",
   "productName": "ClearKeep",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "ClearKeep — a calm, minimal personal mail client.",
   "main": "main.js",
   "scripts": {
