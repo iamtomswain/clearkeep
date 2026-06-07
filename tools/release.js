@@ -20,9 +20,11 @@ const CFG = require("../lib/config");
 const version = pkg.version;
 const distDir = path.join(__dirname, "..", "dist");
 
-const zip = fs.readdirSync(distDir).find((f) => f.endsWith("-mac.zip"));
+// Match the zip for THIS version — dist/ may hold older builds, and a bare
+// .endsWith("-mac.zip") would grab whichever sorts first (wrong file + hash).
+const zip = fs.readdirSync(distDir).find((f) => f.includes(`-${version}-`) && f.endsWith("-mac.zip"));
 if (!zip) {
-  console.error('No "*-mac.zip" in dist/. Build with the zip target first (npm run release).');
+  console.error(`No "*-${version}-*-mac.zip" in dist/. Build v${version} first (npm run release).`);
   process.exit(1);
 }
 const sha256 = crypto.createHash("sha256").update(fs.readFileSync(path.join(distDir, zip))).digest("hex");
