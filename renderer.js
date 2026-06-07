@@ -80,6 +80,10 @@ function commitPendingRead() {
 let currentList = [];        // messages in current display order
 let folderViewMessages = []; // server-fetched mail for Archive/Trash/Spam views
 let folderViewError = null;  // e.g. missing scope for system folders
+let searchViewMessages = []; // whole-mailbox "deep search" results (full screen view)
+let searchViewMeta = { query: "", errors: [] };
+let searchLoading = false;   // deep search in flight (show loading state in the screen view)
+let searchSeq = 0;           // guards against a stale search overwriting a newer one
 
 // Command palette state
 let paletteResults = [];
@@ -87,7 +91,7 @@ let paletteActive = -1;
 let paletteTimer = null;
 let paletteSeq = 0;
 
-function findMsg(id) { return MESSAGES.find((m) => m.id === id) || folderViewMessages.find((m) => m.id === id) || paletteResults.find((m) => m.id === id) || needsSourceMsgs.find((m) => m.id === id) || importantSourceMsgs.find((m) => m.id === id) || askSourceMsgs.find((m) => m.id === id); }
+function findMsg(id) { return MESSAGES.find((m) => m.id === id) || folderViewMessages.find((m) => m.id === id) || searchViewMessages.find((m) => m.id === id) || paletteResults.find((m) => m.id === id) || needsSourceMsgs.find((m) => m.id === id) || importantSourceMsgs.find((m) => m.id === id) || askSourceMsgs.find((m) => m.id === id); }
 function groupMessageIds(ids) {
   const map = new Map();
   ids.forEach((id) => { const m = findMsg(id); if (!m) return; if (!map.has(m.account)) map.set(m.account, []); map.get(m.account).push(m.messageId); });
@@ -97,6 +101,7 @@ function removeIdsLocally(ids) {
   const set = new Set(ids);
   MESSAGES = MESSAGES.filter((m) => !set.has(m.id));
   folderViewMessages = folderViewMessages.filter((m) => !set.has(m.id));
+  searchViewMessages = searchViewMessages.filter((m) => !set.has(m.id));
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -292,7 +297,9 @@ function visibleMessages() {
   const acc = state.activeAccount;
   const v = state.view;
   let msgs;
-  if (isServerFolderView()) {
+  if (v.type === "search") {
+    msgs = searchViewMessages.slice(); // whole-mailbox deep-search results
+  } else if (isServerFolderView()) {
     msgs = folderViewMessages.slice(); // server-fetched (real provider folder / label)
   } else {
     // Folders are now real server folders, so the inbox is simply the server
@@ -653,6 +660,7 @@ function viewTitle() {
   if (v.type === "archive") return "Archive";
   if (v.type === "spam") return "Spam";
   if (v.type === "trash") return "Trash";
+  if (v.type === "search") return `Search: “${v.query || ""}”`;
   return "Mail";
 }
 
@@ -727,6 +735,13 @@ function renderList() {
   $("#list-meta").textContent = state.loading
     ? "Syncing…"
     : (msgs.length === 0 ? "" : `${msgs.length} message${msgs.length > 1 ? "s" : ""}` + (unread ? ` · ${unread} unread` : ""));
+  if (state.view.type === "search") {
+    $("#list-meta").textContent = searchLoading
+      ? "Searching…"
+      : (msgs.length
+        ? `${msgs.length} result${msgs.length === 1 ? "" : "s"} · whole mailbox · drag into a folder to file`
+        : "No matches in your whole mailbox");
+  }
 
   const listEl = $("#message-list");
   listEl.innerHTML = "";
@@ -735,8 +750,12 @@ function renderList() {
     const empty = document.createElement("div");
     empty.className = "list-empty";
     const isSys = state.view.type === "archive" || state.view.type === "trash" || state.view.type === "spam";
-    empty.textContent = state.loading ? "Connecting to your mailbox…"
-      : (isSys && folderViewError ? folderViewError : "Nothing here.");
+    if (state.view.type === "search" && searchLoading) {
+      empty.innerHTML = `<div class="list-empty-loading"><div class="cu-spinner"></div><div>Searching your mailbox for “${escapeHtml(searchViewMeta.query)}”…</div></div>`;
+    } else {
+      empty.textContent = state.loading ? "Connecting to your mailbox…"
+        : (isSys && folderViewError ? folderViewError : "Nothing here.");
+    }
     listEl.appendChild(empty);
     currentList = msgs;
     syncReader();
@@ -1306,6 +1325,78 @@ async function downloadAttachment(m, a, openAfter) {
   else await api.saveFile({ name: a.name, base64: res.base64 });
 }
 
+// ── In-app attachment preview (PDF / image / text) ───────────────────────────
+function previewKind(mime, name) {
+  const m = (mime || "").toLowerCase();
+  const ext = (name || "").toLowerCase().split(".").pop();
+  if (m.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(ext)) return "image";
+  if (m === "application/pdf" || ext === "pdf") return "pdf";
+  if (m.startsWith("text/") || ["txt", "csv", "log", "md", "json", "xml", "ics"].includes(ext)) return "text";
+  return null; // not natively previewable — fall back to Open/Download
+}
+function b64ToBytes(b64) {
+  const bin = atob(b64 || "");
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+let attPreviewUrl = null;
+function attPreviewEsc(e) { if (e.key === "Escape") closeAttPreview(); }
+function closeAttPreview() {
+  const ov = document.getElementById("att-pv");
+  if (ov) ov.remove();
+  if (attPreviewUrl) { URL.revokeObjectURL(attPreviewUrl); attPreviewUrl = null; }
+  document.removeEventListener("keydown", attPreviewEsc);
+}
+async function openAttachmentPreview(m, a) {
+  closeAttPreview();
+  const kind = previewKind(a.mimeType, a.name);
+  const ov = document.createElement("div");
+  ov.id = "att-pv";
+  ov.className = "att-pv-overlay";
+  ov.innerHTML = `
+    <div class="att-pv-panel">
+      <div class="att-pv-head">
+        <div class="att-pv-title">${escapeHtml(a.name)}<span class="att-pv-size">${FILE_KB(a.size || 0)}</span></div>
+        <div class="att-pv-actions">
+          <button class="att-pv-btn" id="att-pv-open" type="button">Open in app</button>
+          <button class="att-pv-btn" id="att-pv-dl" type="button">Download</button>
+          <button class="att-pv-x" id="att-pv-close" type="button" aria-label="Close">✕</button>
+        </div>
+      </div>
+      <div class="att-pv-body" id="att-pv-body"><div class="att-pv-msg">Loading…</div></div>
+    </div>`;
+  document.body.appendChild(ov);
+  document.addEventListener("keydown", attPreviewEsc);
+  ov.addEventListener("click", (e) => { if (e.target === ov) closeAttPreview(); });
+  $("#att-pv-close").addEventListener("click", closeAttPreview);
+  $("#att-pv-dl").addEventListener("click", () => downloadAttachment(m, a, false));
+  $("#att-pv-open").addEventListener("click", () => downloadAttachment(m, a, true));
+
+  const body = $("#att-pv-body");
+  if (!kind) { body.innerHTML = `<div class="att-pv-msg">No inline preview for this file type.<br>Use <b>Open in app</b> or <b>Download</b>.</div>`; return; }
+  try {
+    const res = await api.fetchAttachment({ accountId: m.account, folderId: m.folderId, messageId: m.messageId, attachmentId: a.id });
+    if (!document.getElementById("att-pv")) return; // closed while loading
+    if (!res || !res.ok) { body.innerHTML = `<div class="att-pv-msg">Couldn’t load this attachment.</div>`; return; }
+    const bytes = b64ToBytes(res.base64);
+    if (kind === "text") {
+      const pre = document.createElement("pre");
+      pre.className = "att-pv-text";
+      pre.textContent = new TextDecoder("utf-8").decode(bytes).slice(0, 200000);
+      body.innerHTML = ""; body.appendChild(pre);
+      return;
+    }
+    const blob = new Blob([bytes], { type: a.mimeType || (kind === "pdf" ? "application/pdf" : "application/octet-stream") });
+    attPreviewUrl = URL.createObjectURL(blob);
+    body.innerHTML = kind === "image"
+      ? `<img class="att-pv-img" src="${attPreviewUrl}" alt="${escapeHtml(a.name)}"/>`
+      : `<iframe class="att-pv-frame" src="${attPreviewUrl}" title="${escapeHtml(a.name)}"></iframe>`;
+  } catch (e) {
+    body.innerHTML = `<div class="att-pv-msg">Couldn’t preview: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
 function findUnsubscribe(html) {
   const tmp = document.createElement("div");
   tmp.innerHTML = html;
@@ -1447,7 +1538,7 @@ async function openMessage(id) {
   c.querySelectorAll(".r-att").forEach((el) => {
     const a = files[Number(el.dataset.idx)];
     if (!a) return;
-    el.addEventListener("click", (e) => { if (e.target.closest(".r-att-dl")) return; downloadAttachment(m, a, true); });
+    el.addEventListener("click", (e) => { if (e.target.closest(".r-att-dl")) return; openAttachmentPreview(m, a); });
   });
   c.querySelectorAll(".r-att-dl").forEach((btn) => {
     const a = files[Number(btn.dataset.idx)];
@@ -1829,10 +1920,11 @@ function renderThemeModal() {
   if (t.step === "name") {
     card.innerHTML = `
       <div class="folder-card-title">New theme folder</div>
-      <p class="folder-card-hint">Name a theme — e.g. <b>Custody</b>, <b>School</b>, <b>Health</b>. Claude finds which inbox senders fit; you review them, then they’re filed.</p>
+      <p class="folder-card-hint">Name a theme — e.g. <b>Custody</b>, <b>School</b>, <b>Health</b> — and Claude finds which inbox senders fit. Or just <b>create an empty folder</b> and file mail into it yourself.</p>
       <input type="text" id="theme-name" placeholder="e.g. Custody, School, Health" autocomplete="off" />
       <div class="folder-card-foot">
         <button class="ghost-btn" id="theme-cancel" type="button">Cancel</button>
+        <button class="ghost-btn" id="theme-empty" type="button">Create empty</button>
         <button class="send-btn" id="theme-find" type="button">Find matches →</button>
       </div>`;
     const input = $("#theme-name");
@@ -1840,6 +1932,7 @@ function renderThemeModal() {
     setTimeout(() => input.focus(), 30);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") themeFind(); });
     $("#theme-find").addEventListener("click", themeFind);
+    $("#theme-empty").addEventListener("click", themeCreateEmpty);
     $("#theme-cancel").addEventListener("click", closeThemeModal);
   } else if (t.step === "finding") {
     const p = t.progress; let sub = "Reading inbox…", pct = null;
@@ -1859,10 +1952,12 @@ function renderThemeModal() {
       <div class="theme-rows">${rows.length ? rows.map(themeRowHtml).join("") : `<div class="cu-empty">No matching senders found.</div>`}</div>
       <div class="folder-card-foot">
         <button class="ghost-btn" id="theme-cancel" type="button">Cancel</button>
-        <button class="send-btn" id="theme-file" type="button" ${sel.length ? "" : "disabled"}>File ${totalMail.toLocaleString()} email${totalMail === 1 ? "" : "s"} →</button>
+        <button class="${rows.length ? "ghost-btn" : "send-btn"}" id="theme-empty" type="button">Create empty${rows.length ? "" : " folder →"}</button>
+        ${rows.length ? `<button class="send-btn" id="theme-file" type="button" ${sel.length ? "" : "disabled"}>File ${totalMail.toLocaleString()} email${totalMail === 1 ? "" : "s"} →</button>` : ""}
       </div>`;
     $("#theme-cancel").addEventListener("click", closeThemeModal);
-    $("#theme-file").addEventListener("click", themeFile);
+    const fileBtn = $("#theme-file"); if (fileBtn) fileBtn.addEventListener("click", themeFile);
+    const emptyBtn = $("#theme-empty"); if (emptyBtn) emptyBtn.addEventListener("click", themeCreateEmpty);
     card.querySelectorAll(".theme-row").forEach((rowEl) => {
       const row = t.rows.find((r) => r.id === rowEl.getAttribute("data-id"));
       if (!row) return;
@@ -1914,6 +2009,20 @@ async function themeFile() {
       await loadInbox(); await loadFolders(); renderAll();
       toast(`Removed “${name}” — mail returned to inbox`);
     } });
+  } catch (e) { toast(`Couldn’t create folder: ${e.message}`, { error: true }); }
+}
+// Create an empty folder (no theme match, no filing) — a manual "file it later"
+// folder. Reads the name from the input (name step) or the carried theme name (review).
+async function themeCreateEmpty() {
+  const name = ((($("#theme-name") || {}).value || (themeFolder && themeFolder.name) || "")).trim();
+  if (!name) { const i = $("#theme-name"); if (i) i.focus(); return; }
+  closeThemeModal();
+  toast(`Creating folder “${name}”…`, { sticky: true });
+  try {
+    const res = await api.createEmptyFolder({ accountId: state.activeAccount, name });
+    if (!res || !res.ok) { toast(`Couldn’t create folder: ${(res && res.error) || "unknown error"}`, { error: true }); return; }
+    await loadFolders(); renderAll();
+    toast(`Created “${name}” — drag mail into it anytime`);
   } catch (e) { toast(`Couldn’t create folder: ${e.message}`, { error: true }); }
 }
 
@@ -3793,24 +3902,39 @@ function openPalette(prefill) {
   runPalette($("#palette-input").value, false);
 }
 function closePalette() { $("#palette").classList.add("hidden"); clearTimeout(paletteTimer); }
+// Deep search: switch to the full screen view IMMEDIATELY with a loading state,
+// then run the whole-mailbox search and fill in results when they arrive. Reuses the
+// normal message list, so rows are selectable and draggable into folders to file them.
+async function runDeepSearch(query) {
+  searchViewMessages = [];
+  searchViewMeta = { query, errors: [] };
+  searchLoading = true;
+  const mySeq = ++searchSeq;
+  closePalette();
+  setView({ type: "search", query }); // renders the loading state right away
+  try {
+    const scan = await api.searchAll({ accountId: state.activeAccount, query, cap: 600 });
+    if (mySeq !== searchSeq || state.view.type !== "search") return; // superseded / navigated away
+    searchViewMessages = (scan.messages || []).map((m) => ({ ...m, ...classify(m) }));
+    searchViewMeta = { query, errors: scan.errors || [] };
+    searchLoading = false;
+    renderList();
+    if (searchViewMessages.length) hydrateSnippets(searchViewMessages);
+    else if (scan.errors && scan.errors.length) toast(scan.errors[0].error, { error: true });
+  } catch (err) {
+    if (mySeq !== searchSeq || state.view.type !== "search") return;
+    searchLoading = false;
+    renderList();
+    toast(`Search failed: ${err.message}`, { error: true });
+  }
+}
 
 async function runPalette(q, isEnter) {
   const seq = ++paletteSeq;
   clearTimeout(paletteTimer);
 
   if (isEnter && q.trim()) {
-    setPaletteStatus(`<span class="palette-thinking">${sparkSvg()} Searching your whole mailbox…</span>`);
-    try {
-      const scan = await api.deepScan({ limit: 500 });
-      if (seq !== paletteSeq) return;
-      const pool = (scan.messages || []).map((m) => ({ ...m, ...classify(m) }));
-      const res = await api.searchEmails({ query: q, items: paletteItems(pool) });
-      if (seq !== paletteSeq) return;
-      paletteResults = (res.indices || []).map((i) => pool[i]).filter(Boolean);
-      paletteActive = -1;
-      renderPalette();
-      setPaletteStatus(`${paletteResults.length} result${paletteResults.length === 1 ? "" : "s"} · whole mailbox`);
-    } catch (err) { setPaletteStatus(`Search failed: ${err.message}`); }
+    runDeepSearch(q.trim()); // closes the palette + opens the screen view immediately
     return;
   }
 

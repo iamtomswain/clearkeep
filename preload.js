@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("clearkeep", {
   // mail
   fetchInbox: (opts) => ipcRenderer.invoke("mail:inbox", opts),
   deepScan: (opts) => ipcRenderer.invoke("mail:scan", opts),
+  searchAll: (opts) => ipcRenderer.invoke("mail:searchAll", opts),
   fetchPage: (args) => ipcRenderer.invoke("mail:page", args),
   inboxUnread: (args) => ipcRenderer.invoke("mail:inboxUnread", args),
   senderTally: (args) => ipcRenderer.invoke("mail:senderTally", args),
@@ -52,6 +53,7 @@ contextBridge.exposeInMainWorld("clearkeep", {
   listFolders: (accountId) => ipcRenderer.invoke("folders:list", accountId),
   setFolderOrder: (payload) => ipcRenderer.invoke("folders:setOrder", payload),
   createFolder: (payload) => ipcRenderer.invoke("folders:createAndFill", payload),
+  createEmptyFolder: (payload) => ipcRenderer.invoke("folders:createEmpty", payload),
   autoOrganize: (payload) => ipcRenderer.invoke("folders:autoOrganize", payload),
   unfileFolder: (payload) => ipcRenderer.invoke("folders:unfile", payload),
   // Clean up (bulk unsubscribe + purge)

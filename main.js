@@ -89,7 +89,9 @@ function createWindow() {
     icon: path.join(__dirname, "assets", "icon.png"),
     // backgroundThrottling off so the proactive poll keeps firing on schedule
     // while the window is hidden (Phase 2: stay watching with the window closed).
-    webPreferences: { preload: path.join(__dirname, "preload.js"), backgroundThrottling: false },
+    // plugins: true enables Chromium's built-in PDF viewer so attachments can be
+    // previewed inline (in an <iframe>) instead of being downloaded to disk first.
+    webPreferences: { preload: path.join(__dirname, "preload.js"), backgroundThrottling: false, plugins: true },
   });
   mainWindow.loadFile(path.join(__dirname, "index.html"));
 
@@ -223,6 +225,22 @@ ipcMain.handle("mail:inbox", async (_e, opts = {}) => {
 ipcMain.handle("mail:scan", async (_e, opts = {}) => {
   try { return await gatherInbox("listMany", opts.limit || 400); }
   catch (err) { return { messages: [], errors: [{ account: "", error: err.message }] }; }
+});
+// Whole-mailbox search: every account, every folder (not just the inbox). Providers
+// that implement searchAll get full coverage; others fall back to an inbox scan.
+ipcMain.handle("mail:searchAll", async (_e, { accountId, query = "", cap = 500 } = {}) => {
+  // Scope to the ACTIVE account ONLY — never fan out across accounts (that would
+  // surface another mailbox's private mail). And NEVER fall back to an unfiltered
+  // inbox dump: a search must return query matches or nothing.
+  try {
+    const acct = accountId ? accounts.withSecret(accountId) : null;
+    if (!acct) return { messages: [], errors: [{ account: "", error: "No active account." }] };
+    let b; try { b = backendFor(acct.provider); } catch { b = null; }
+    if (!b || !b.searchAll) return { messages: [], errors: [{ account: acct.address, error: `Whole-mailbox search isn’t supported on ${acct.provider} yet.` }] };
+    const messages = await b.searchAll(oauthFor(acct.provider), acct, { query, cap });
+    messages.sort((x, y) => y.dateMs - x.dateMs);
+    return { messages: messages.slice(0, cap), errors: [] };
+  } catch (err) { return { messages: [], errors: [{ account: accountId || "", error: String((err && err.message) || err) }] }; }
 });
 
 ipcMain.handle("mail:body", async (_e, { accountId, folderId, messageId }) => {
@@ -901,6 +919,25 @@ ipcMain.handle("folders:fileTheme", async (_e, { accountId, name, addresses = []
     folders.setRules(folder.id, { addresses, domains: [] });
     const filed = (await backend.fileBySenders(oauthFor(acct.provider), acct, { name, addresses, domains: [] })).filed || 0;
     return { ok: true, folder, filed };
+  } catch (err) { return { ok: false, error: err.message }; }
+});
+// Create an EMPTY folder — no theme match, no rules, no filing. For a manual
+// "file it myself later" folder (e.g. archiving past-life docs). Creates the local
+// record AND the real server mailbox/label so it's a drop target right away. With no
+// rules, auto-classification never routes mail into it — it stays exactly as filed.
+ipcMain.handle("folders:createEmpty", async (_e, { accountId, name } = {}) => {
+  try {
+    const nm = String(name || "").trim();
+    if (!nm) return { ok: false, error: "Folder needs a name." };
+    const acct = accounts.withSecret(accountId);
+    if (!acct) return { ok: false, error: "Unknown account." };
+    const backend = BACKENDS[acct.provider];
+    const folder = folders.create(nm, accountId);
+    try {
+      if (backend && backend.ensureMailbox) await backend.ensureMailbox(acct, folder.name);
+      else if (backend && backend.ensureLabel) await backend.ensureLabel(oauthFor(acct.provider), acct, folder.name);
+    } catch (e) { return { ok: false, error: "Couldn’t create the server folder: " + e.message }; }
+    return { ok: true, folder: folders.list().find((f) => f.id === folder.id) || folder };
   } catch (err) { return { ok: false, error: err.message }; }
 });
 
