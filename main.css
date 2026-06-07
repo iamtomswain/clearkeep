@@ -110,6 +110,7 @@
   --w-palette: 640px;       /* command palette */
   --w-chat: 680px;          /* ask thread + composer column */
   --w-reader: 760px;        /* reader content column */
+  --w-modal-xl: 1040px;     /* attachment-preview panel (widest overlay) */
 
   /* Composite layout token — cleanup review table columns (one bespoke grid;
      held as a single named value rather than loose track widths in the rule). */
@@ -228,6 +229,14 @@
   --star: #f5a623;                               /* the important-flag star (its own gold) */
   --color-white: #ffffff;
   --color-black: #000;
+
+  /* Solid action button (primary) — theme-aware fill + text so contrast holds in
+     BOTH modes: dark fill / light text in light mode, light fill / dark text in
+     dark mode. Both sides reference theme-variable tokens, so they flip together
+     and need no dark override. A literal --color-white foreground white-outs the
+     text on dark (the .cu-btn-primary bug) — always use these for inverted fills. */
+  --btn-solid-bg: var(--text-primary);
+  --btn-solid-fg: var(--bg-primary);
 
   /* Elevation */
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);     /* subtle card lift */
@@ -724,7 +733,10 @@ body { display: flex; flex-direction: column; }
 .workspace-menu {
   /* Drops UP from the footer switcher (opens into the sidebar, above the button). */
   position: absolute; bottom: calc(100% + var(--space-6)); top: auto; left: var(--space-6); right: var(--space-6); z-index: var(--z-sticky);
-  background: var(--rail-surface);            /* solid raised dark popover (not translucent) */
+  /* Solid raised surface (matches .prefs-menu) — a backdrop-filter blur is a no-op
+     here because the #app ancestor already owns a backdrop-filter (it becomes the
+     backdrop root), so the popover can't blur the window content behind #app. */
+  background: var(--surface);
   border: var(--bw) solid var(--line); border-radius: var(--radius-md);
   padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2);
   box-shadow: 0 -16px 40px rgba(0,0,0,0.55);
@@ -1440,7 +1452,7 @@ body[data-layout="pane"] .reader-resize::after {
 .ghost-btn:hover { background: var(--ov-hover); color: var(--text-primary); }
 .send-btn {
   font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--fw-semibold);
-  color: var(--bg-primary); background: var(--text-primary);
+  color: var(--btn-solid-fg); background: var(--btn-solid-bg);
   border: none; border-radius: var(--radius-sm);
   padding: var(--space-8) var(--space-18); cursor: pointer; transition: opacity var(--dur-fast) ease;
 }
@@ -1518,7 +1530,7 @@ body[data-layout="pane"] .reader-resize::after {
 .provider-btn {
   display: inline-flex; align-items: center; gap: var(--space-10);
   font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--fw-semibold);
-  color: var(--bg-primary); background: var(--text-primary);
+  color: var(--btn-solid-fg); background: var(--btn-solid-bg);
   border: none; border-radius: var(--radius-sm);
   padding: var(--space-10) var(--space-16); cursor: pointer; transition: opacity var(--dur-fast) ease;
 }
@@ -1727,7 +1739,7 @@ body.reordering-folders #folder-items .rail-row { cursor: grabbing; }
   animation: fade-in var(--dur-fast) ease;
 }
 .att-pv-panel {
-  width: min(1040px, 92vw); height: min(88vh, 1100px);
+  width: min(var(--w-modal-xl), 92vw); height: 88vh;   /* bare vh cap, like every other modal */
   display: flex; flex-direction: column; overflow: hidden;
   background: var(--bg-tertiary);
   border: var(--bw) solid var(--line);
@@ -1758,7 +1770,7 @@ body.reordering-folders #folder-items .rail-row { cursor: grabbing; }
 }
 .att-pv-x:hover { background: var(--bg-hover); color: var(--text-primary); }
 .att-pv-body { flex: 1; min-height: 0; overflow: auto; background: var(--bg-secondary); display: flex; align-items: center; justify-content: center; }
-.att-pv-frame { width: 100%; height: 100%; border: 0; background: #fff; }
+.att-pv-frame { width: 100%; height: 100%; border: 0; background: var(--color-white); }
 .att-pv-img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .att-pv-text { width: 100%; height: 100%; margin: 0; padding: var(--space-16); overflow: auto; font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--lh-relaxed); white-space: pre-wrap; word-break: break-word; color: var(--text-primary); }
 .att-pv-msg { color: var(--text-tertiary); font-size: var(--text-sm); text-align: center; padding: var(--space-24); line-height: var(--lh-relaxed); }
@@ -1882,7 +1894,7 @@ body.ai-organizing .msg-row.ai-head {
 .ki-subject { font-size: var(--text-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: var(--space-2); }
 .ki-why { flex-shrink: 0; max-width: var(--w-cap-190); font-size: var(--text-xs); color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 .ki-check { flex-shrink: 0; width: var(--size-18); height: var(--size-18); border-radius: var(--radius-sm); border: var(--bw-thick) solid var(--line); background: var(--surface); color: transparent; display: grid; place-items: center; cursor: pointer; padding: 0; transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease; }
-.ki-check.on { background: var(--text-primary); border-color: var(--text-primary); color: var(--color-white); }
+.ki-check.on { background: var(--btn-solid-bg); border-color: var(--btn-solid-bg); color: var(--btn-solid-fg); }
 .ki-dot { flex-shrink: 0; width: var(--size-5); height: var(--size-5); border-radius: var(--radius-full); background: var(--text-tertiary); margin: 0 var(--space-6); }
 .ki-more { font-size: var(--text-xs); color: var(--text-tertiary); padding: var(--space-8) var(--space-4) var(--space-2) var(--space-20); }
 
@@ -1940,7 +1952,7 @@ body.ai-organizing .msg-row.ai-head {
 .ask-bar:focus-within { border-color: var(--text-tertiary); }
 .ask-bar input { flex: 1; min-width: 0; border: none; background: none; outline: none; font-family: var(--font-sans); font-size: var(--text-md); color: var(--text-primary); height: var(--size-34); }
 .ask-bar input::placeholder { color: var(--text-tertiary); }
-.ask-send { flex-shrink: 0; width: var(--size-34); height: var(--size-34); border-radius: var(--radius-full); border: none; background: var(--text-primary); color: var(--color-white); display: grid; place-items: center; cursor: pointer; transition: opacity var(--dur-fast) ease; }
+.ask-send { flex-shrink: 0; width: var(--size-34); height: var(--size-34); border-radius: var(--radius-full); border: none; background: var(--btn-solid-bg); color: var(--btn-solid-fg); display: grid; place-items: center; cursor: pointer; transition: opacity var(--dur-fast) ease; }
 .ask-send:hover { opacity: 0.85; }
 .ask-send:disabled { opacity: 0.35; cursor: default; }
 .ki-clutter .ki-group-clutter { color: var(--status-danger); }
@@ -2050,8 +2062,9 @@ body.ai-organizing .msg-row.ai-head {
 .cu-btn { font-family: var(--font-sans); font-size: var(--text-sm); font-weight: var(--fw-medium); padding: var(--space-8) var(--space-14); border-radius: var(--radius-sm); border: var(--bw) solid var(--line); background: var(--surface); color: var(--text-primary); cursor: pointer; }
 .cu-btn:hover { background: var(--bg-hover); }
 .cu-btn:disabled { opacity: 0.5; cursor: default; }
-.cu-btn-primary { background: var(--text-primary); color: var(--color-white); border-color: var(--text-primary); }
-.cu-btn-primary:hover { background: var(--color-black); }
+.cu-btn-primary { background: var(--btn-solid-bg); color: var(--btn-solid-fg); border-color: var(--btn-solid-bg); }
+/* Re-assert the fill so the base .cu-btn:hover grey can't win, then dim (like .send-btn). */
+.cu-btn-primary:hover { background: var(--btn-solid-bg); opacity: 0.9; }
 .cu-btn-danger { background: var(--status-danger-strong); color: var(--color-white); border-color: var(--status-danger-strong); }
 .cu-btn-danger:hover { background: var(--status-danger); }   /* darken on hover (was a no-op) */
 
