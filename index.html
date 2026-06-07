@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClearKeep</title>
+  <script>
+    // One-time localStorage key migration: the old "strictmail.*"/"stillbox.*" keys
+    // are renamed to "clearkeep.*". Runs before anything reads them.
+    try {
+      var _ren = { "strictmail.layout": "clearkeep.layout", "stillbox.draft": "clearkeep.draft" };
+      for (var _o in _ren) {
+        var _n = _ren[_o], _v = localStorage.getItem(_o);
+        if (_v != null && localStorage.getItem(_n) == null) localStorage.setItem(_n, _v);
+        localStorage.removeItem(_o);
+      }
+      for (var _i = localStorage.length - 1; _i >= 0; _i--) {
+        var _k = localStorage.key(_i);
+        if (_k && _k.indexOf("stillbox.needsRefresh.") === 0) {
+          var _nk = "clearkeep.needsRefresh." + _k.slice("stillbox.needsRefresh.".length);
+          if (localStorage.getItem(_nk) == null) localStorage.setItem(_nk, localStorage.getItem(_k));
+          localStorage.removeItem(_k);
+        }
+      }
+    } catch (e) {}
+    // Theme boot — applied before first paint to avoid a flash-of-wrong-theme.
+    // Light is the default; dark is opt-in via the prefs toggle (persisted in clearkeep.layout).
+    try {
+      var _p = JSON.parse(localStorage.getItem("clearkeep.layout") || "{}");
+      document.documentElement.dataset.theme = _p.theme === "dark" ? "dark" : "light";
+    } catch (e) { document.documentElement.dataset.theme = "light"; }
+  </script>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body data-layout="pane">
+  <!-- Inverted invisible header: a transparent full-width strip across the top
+       that gives the frameless window its drag handle. Interactive controls that
+       fall in this band opt out with -webkit-app-region: no-drag (see CSS). -->
+  <div id="drag-region" aria-hidden="true"></div>
+
+  <!-- Full-bleed glass window: docked sidebar + main content. -->
+  <div id="app">
+
+    <!-- Docked sidebar -->
+    <aside id="sidebar">
+      <!-- Top drag bar — macOS traffic lights occupy the left; compose on the right.
+           The whole strip is the window drag handle (no titlebar). -->
+      <div class="brand-section">
+        <button id="compose-btn" class="compose-btn" type="button" title="Compose">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 3.25V12.75M3.25 8H12.75" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div id="sidebar-body">
+        <section class="nav-section rail-group">
+          <div class="group-label">Mailboxes</div>
+          <div class="group-items" id="mailbox-items"></div>
+        </section>
+
+        <section class="nav-section rail-group" id="folders-group">
+          <div class="group-label-row">
+            <div class="group-label">Folders</div>
+            <button class="group-fold hidden" id="folders-fold-btn" type="button" aria-label="Expand or collapse folders"></button>
+            <div class="group-actions">
+              <button class="group-add" id="add-folder-btn" type="button" title="New folder" aria-label="New folder">
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 3.5V12.5M3.5 8H12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="group-items" id="folder-items"></div>
+        </section>
+      </div>
+
+      <div id="sidebar-footer">
+        <div class="workspace" id="workspace-group">
+          <div class="workspace-menu hidden" id="workspace-menu"></div>
+          <button class="workspace-current" id="workspace-current" type="button" aria-haspopup="true" aria-expanded="false"></button>
+        </div>
+        <div class="prefs">
+          <button id="prefs-btn" class="titlebar-btn prefs-btn" type="button" title="Settings" aria-haspopup="true" aria-expanded="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+          </button>
+          <div id="prefs-menu" class="prefs-menu hidden">
+            <div class="prefs-row">
+              <span class="prefs-label">Dark mode</span>
+              <button id="theme-toggle" class="switch" type="button" role="switch" aria-checked="false" title="Toggle dark mode"><span class="switch-knob"></span></button>
+            </div>
+            <div class="prefs-row">
+              <span class="prefs-label">ClearKeep <span id="app-version" class="prefs-version"></span></span>
+              <button id="update-btn" class="link-btn" type="button">Check for updates</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content: workspace header + body split -->
+    <div id="main-content">
+
+      <div id="workspace-header">
+        <div class="top-bar">
+          <div class="ws-search">
+            <svg class="ws-search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.25" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            <input type="text" placeholder="Search in Inbox…" id="search-input" />
+          </div>
+          <div class="top-actions">
+            <button class="action-btn" id="refresh-btn" type="button" title="Refresh" aria-label="Refresh">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M13 8C13 10.76 10.76 13 8 13C5.24 13 3 10.76 3 8C3 5.24 5.24 3 8 3C9.66 3 11.13 3.81 12.04 5.05M12.5 2.5V5.2H9.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-pills" id="filter-pills">
+          <button class="pill" id="pill-keepers" type="button">
+            <svg class="pill-ico pill-ico-zap" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8.5 1.5L3.5 9H7.5L7.5 14.5L12.5 7H8.5L8.5 1.5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            <span>Important emails to read</span>
+            <span class="pill-count" id="pill-keepers-n">0</span>
+          </button>
+          <button class="pill" id="pill-needs" type="button">
+            <svg class="pill-ico pill-ico-clock" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M8 5V8L10 9.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Things need you</span>
+            <span class="pill-count" id="pill-needs-n">0</span>
+          </button>
+          <button class="pill" id="pill-cleanup" type="button">
+            <svg class="pill-ico" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.5 2.5L7.8 6.2M5.2 8.8C4.2 9.8 3.6 11.6 3.4 13.2C5 13 6.8 12.4 7.8 11.4L10.4 8.8C11 8.2 11 7.2 10.4 6.6L9.4 5.6C8.8 5 7.8 5 7.2 5.6L5.2 8.8Z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.2 11.2L3 13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <span>Clean up</span>
+          </button>
+          <button class="pill" id="pill-ask" type="button">
+            <svg class="pill-ico" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.2h10c.6 0 1 .5 1 1v5.6c0 .6-.4 1-1 1H6.6L4 13.2v-2.2H3c-.6 0-1-.4-1-1V4.2c0-.5.4-1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6.4 6.1c0-.9.8-1.5 1.7-1.4.8 0 1.5.6 1.5 1.4 0 1-1.1 1.1-1.5 1.7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.05" cy="9.4" r="0.55" fill="currentColor"/></svg>
+            <span>Ask AI</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Workspace body: list column + detail pane -->
+      <main id="mail">
+        <div id="mail-main">
+          <div id="list-header">
+            <div class="list-head-left">
+              <div class="list-title" id="list-title">Loading…</div>
+              <div class="list-meta" id="list-meta"></div>
+            </div>
+            <div class="list-controls">
+              <div class="list-sort" id="list-filter">
+                <button class="list-sort-btn" id="list-filter-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Filter by category">
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4H13.5L9.2 9V13L6.8 11.5V9L2.5 4Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                  <span id="list-filter-label">All</span>
+                  <svg class="ls-chevron" width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5L8 10L11.5 6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="list-sort-menu hidden" id="list-filter-menu"></div>
+              </div>
+              <div class="list-sort" id="list-sort">
+                <button class="list-sort-btn" id="list-sort-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Sort & group">
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 4.5H13M4.5 8H11.5M6.5 11.5H9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                  <span id="list-sort-label">Status</span>
+                  <svg class="ls-chevron" width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5L8 10L11.5 6.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="list-sort-menu hidden" id="list-sort-menu">
+                  <button class="ls-option" data-sort="timeline" type="button">Timeline <span class="ls-hint">Newest first</span></button>
+                  <button class="ls-option" data-sort="status" type="button">Status <span class="ls-hint">Unread / Read</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="needs-banner" class="hidden"></div>
+
+          <div id="selection-bar" class="hidden">
+            <button class="sel-icon-btn" id="sel-clear" type="button" title="Clear selection">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <span class="sel-count" id="sel-count">0 selected</span>
+            <button class="sel-text-btn" id="sel-all" type="button">Select all</button>
+            <div class="sel-spacer"></div>
+            <button class="sel-icon-btn" id="sel-read" type="button" title="Mark read">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="sel-icon-btn" id="sel-toinbox" type="button" title="Move to inbox">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5H5.5L6.5 10.5H9.5L10.5 8.5H13.5M2.5 8.5L4 4.2C4.1 3.8 4.5 3.5 4.9 3.5H11.1C11.5 3.5 11.9 3.8 12 4.2L13.5 8.5M2.5 8.5V11.5C2.5 12 2.9 12.4 3.4 12.4H12.6C13.1 12.4 13.5 12 13.5 11.5V8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="sel-icon-btn" id="sel-archive" type="button" title="Archive">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="4.5" width="11" height="8" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 4.5L3.4 2.8C3.6 2.5 3.9 2.3 4.2 2.3H11.8C12.1 2.3 12.4 2.5 12.6 2.8L13.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.3 7.5H9.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </button>
+            <button class="sel-icon-btn" id="sel-trash" type="button" title="Delete">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3.5 4.5H12.5M6.5 4.5V3.3C6.5 2.9 6.8 2.6 7.2 2.6H8.8C9.2 2.6 9.5 2.9 9.5 3.3V4.5M5 4.5L5.5 12.4C5.5 12.8 5.9 13.1 6.3 13.1H9.7C10.1 13.1 10.5 12.8 10.5 12.4L11 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+
+          <div id="message-list"></div>
+          <div id="cleanup-view" class="hidden"></div>
+          <div id="keepers-view" class="hidden"></div>
+          <div id="needs-view" class="hidden"></div>
+          <div id="ask-view" class="hidden"></div>
+          <div id="mail-empty" class="hidden">
+            <img class="empty-mark" src="assets/icon.png" alt="" />
+            <p class="empty-title">No accounts connected</p>
+            <p class="empty-sub">Add a Zoho account to start receiving mail.</p>
+            <button id="empty-add-btn" class="send-btn" type="button">Add account</button>
+          </div>
+        </div>
+
+        <!-- Reader: detail pane (or bottom drawer) -->
+        <section id="reader" class="hidden">
+          <div class="reader-resize" id="reader-resize"></div>
+          <div class="reader-header">
+            <button id="reader-close" type="button" class="titlebar-btn" title="Close" aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="reader-actions">
+              <button class="reader-act" data-act="reply" type="button" title="Reply">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M7 4L3 7.5L7 11M3.5 7.5H9.5C11.4 7.5 13 9.1 13 11V12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="reader-act" data-act="replyall" type="button" title="Reply all">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M5.5 4L1.5 7.5L5.5 11M9.5 4L5.5 7.5L9.5 11M5.5 7.5H11C12.7 7.5 14 8.8 14 10.5V11.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="reader-act" data-act="forward" type="button" title="Forward">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M9 4L13 7.5L9 11M12.5 7.5H6.5C4.6 7.5 3 9.1 3 11V12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="reader-act" data-act="unread" type="button" title="Mark as unread">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <rect x="2.5" y="4" width="11" height="8" rx="1.2" stroke="currentColor" stroke-width="1.3"/>
+                  <path d="M2.8 4.6L8 8.5L13.2 4.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <button class="reader-act" data-act="archive" type="button" title="Archive">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <rect x="2.5" y="4.5" width="11" height="8" rx="1.2" stroke="currentColor" stroke-width="1.3"/>
+                  <path d="M2.5 4.5L3.4 2.8C3.6 2.5 3.9 2.3 4.2 2.3H11.8C12.1 2.3 12.4 2.5 12.6 2.8L13.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+                  <path d="M6.3 7.5H9.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button class="reader-act" data-act="trash" type="button" title="Delete">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M3.5 4.5H12.5M6.5 4.5V3.3C6.5 2.9 6.8 2.6 7.2 2.6H8.8C9.2 2.6 9.5 2.9 9.5 3.3V4.5M5 4.5L5.5 12.4C5.5 12.8 5.9 13.1 6.3 13.1H9.7C10.1 13.1 10.5 12.8 10.5 12.4L11 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="reader-scroll">
+            <div class="reader-content" id="reader-content"></div>
+          </div>
+          <div class="reader-idle-state" id="reader-empty">
+            <svg width="30" height="30" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 8.5H5.5L6.5 10.5H9.5L10.5 8.5H13.5M2.5 8.5L4 4.2C4.1 3.8 4.5 3.5 4.9 3.5H11.1C11.5 3.5 11.9 3.8 12 4.2L13.5 8.5M2.5 8.5V11.5C2.5 12 2.9 12.4 3.4 12.4H12.6C13.1 12.4 13.5 12 13.5 11.5V8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <p id="reader-empty-text">No email selected</p>
+          </div>
+        </section>
+      </main>
+
+    </div>
+  </div>
+
+  <!-- Compose overlay -->
+  <div id="compose" class="hidden">
+    <div class="compose-card">
+      <div class="compose-head">
+        <span class="compose-title" id="compose-title">New message</span>
+        <span class="compose-draft-status" id="compose-draft-status"></span>
+        <button id="compose-close" class="titlebar-btn" type="button" title="Close" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="compose-fields">
+        <label class="compose-field"><span class="cf-label">From</span>
+          <select id="compose-from"></select>
+        </label>
+        <label class="compose-field"><span class="cf-label">To</span>
+          <input type="text" id="compose-to" placeholder="name@domain.com" />
+          <button type="button" class="cf-toggle" id="cc-toggle">Cc/Bcc</button>
+        </label>
+        <label class="compose-field hidden" id="cf-cc"><span class="cf-label">Cc</span>
+          <input type="text" id="compose-cc" placeholder="name@domain.com" />
+        </label>
+        <label class="compose-field hidden" id="cf-bcc"><span class="cf-label">Bcc</span>
+          <input type="text" id="compose-bcc" placeholder="name@domain.com" />
+        </label>
+        <label class="compose-field"><span class="cf-label">Subject</span>
+          <input type="text" id="compose-subject" placeholder="Subject" />
+        </label>
+      </div>
+      <div class="compose-toolbar" id="compose-toolbar">
+        <button type="button" class="ct-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+        <button type="button" class="ct-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+        <button type="button" class="ct-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+        <span class="ct-sep"></span>
+        <button type="button" class="ct-btn" data-cmd="insertUnorderedList" title="Bulleted list"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="4.5" r="1" fill="currentColor"/><circle cx="3" cy="8" r="1" fill="currentColor"/><circle cx="3" cy="11.5" r="1" fill="currentColor"/><path d="M6 4.5H13M6 8H13M6 11.5H13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+        <button type="button" class="ct-btn" data-cmd="insertOrderedList" title="Numbered list"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 4.5H13M6 8H13M6 11.5H13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><text x="1.5" y="6" font-size="5" fill="currentColor">1</text><text x="1.5" y="9.5" font-size="5" fill="currentColor">2</text><text x="1.5" y="13" font-size="5" fill="currentColor">3</text></svg></button>
+        <button type="button" class="ct-btn" data-cmd="createLink" title="Add link"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6.5 9.5L9.5 6.5M7 4.5L8.2 3.3C9.3 2.2 11 2.2 12 3.3C13.1 4.3 13.1 6 12 7L10.8 8.2M9 11.5L7.8 12.7C6.7 13.8 5 13.8 4 12.7C2.9 11.7 2.9 10 4 9L5.2 7.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>
+      </div>
+      <div id="compose-body" contenteditable="true" data-placeholder="Write your message…"></div>
+      <div id="compose-attachments" class="compose-attachments"></div>
+      <input type="file" id="compose-file" multiple hidden />
+      <div class="compose-foot">
+        <button class="ghost-btn compose-attach" id="compose-attach" type="button" title="Attach files">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M11.5 5.5L6.3 10.7c-.7.7-.7 1.8 0 2.5s1.8.7 2.5 0l5.2-5.2c1.2-1.2 1.2-3.1 0-4.3s-3.1-1.2-4.3 0L4.2 9c-1.7 1.7-1.7 4.4 0 6.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Attach
+        </button>
+        <div class="compose-foot-spacer"></div>
+        <button class="ghost-btn" id="compose-discard" type="button">Discard</button>
+        <button class="send-btn" id="compose-send" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div id="settings" class="hidden">
+    <div class="settings-card">
+      <div class="compose-head">
+        <span class="compose-title">Accounts</span>
+        <button id="settings-close" class="titlebar-btn" type="button" title="Close" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="settings-body">
+        <div id="account-list"></div>
+
+        <div class="settings-divider"></div>
+
+        <div class="provider-block">
+          <div class="group-label">Gmail</div>
+          <button class="provider-btn" id="gmail-signin" type="button">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5L8 8.5L13.5 4.5M2.5 4.5C2.5 3.95 2.95 3.5 3.5 3.5H12.5C13.05 3.5 13.5 3.95 13.5 4.5V11.5C13.5 12.05 13.05 12.5 12.5 12.5H3.5C2.95 12.5 2.5 12.05 2.5 11.5V4.5Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            Sign in with Google
+          </button>
+          <p class="add-hint">Opens Google sign-in in your browser. First time, set up a one-time Google OAuth client. <button class="link-btn" id="gmail-setup-toggle" type="button">Google client setup ▾</button></p>
+          <div id="gmail-client" class="hidden">
+            <div class="compose-field"><span class="cf-label">Client ID</span>
+              <input type="text" id="g-id" placeholder="xxxxx.apps.googleusercontent.com" autocomplete="off" />
+            </div>
+            <div class="compose-field"><span class="cf-label">Secret</span>
+              <input type="password" id="g-secret" placeholder="Google client secret" autocomplete="off" />
+            </div>
+            <p class="add-hint">In Google Cloud Console → APIs &amp; Services: enable the <strong>Gmail API</strong>, create an OAuth client of type <strong>Desktop app</strong>, and add your Gmail as a <strong>test user</strong> on the consent screen. Paste its Client ID &amp; Secret here.</p>
+            <div class="add-actions"><button class="send-btn" id="g-save" type="button">Save Google client</button></div>
+          </div>
+          <div class="add-status" id="gmail-status"></div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="provider-block">
+          <div class="group-label">Yahoo</div>
+          <div class="compose-field"><span class="cf-label">Email</span>
+            <input type="text" id="y-email" placeholder="you@yahoo.com" autocomplete="off" />
+          </div>
+          <div class="compose-field"><span class="cf-label">App password</span>
+            <input type="password" id="y-pass" placeholder="Yahoo app password" autocomplete="off" />
+          </div>
+          <p class="add-hint">Yahoo has no sign-in API, so ClearKeep connects over IMAP/SMTP with an <strong>app password</strong> (not your normal password). Generate one at <strong>Yahoo Account Security → Generate app password</strong>. Stored encrypted in your macOS Keychain.</p>
+          <div class="add-actions"><button class="send-btn" id="y-connect" type="button">Connect Yahoo</button></div>
+          <div class="add-status" id="yahoo-status"></div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="api-client">
+          <div class="group-label">Zoho API client</div>
+          <div class="compose-field"><span class="cf-label">Client ID</span>
+            <input type="text" id="oauth-id" placeholder="1000.XXXXXXXX…" autocomplete="off" />
+          </div>
+          <div class="compose-field"><span class="cf-label">Secret</span>
+            <input type="password" id="oauth-secret" placeholder="Client secret" autocomplete="off" />
+          </div>
+          <p class="add-hint">From your <strong>Self Client</strong> at api-console.zoho.com. Stored encrypted in your macOS Keychain — shared across all accounts you connect.</p>
+          <div class="add-status" id="oauth-status"></div>
+          <div class="add-actions">
+            <button class="send-btn" id="oauth-save" type="button">Save client</button>
+          </div>
+        </div>
+
+        <div class="settings-divider"></div>
+
+        <div class="connect-account">
+          <div class="group-label">Connect an account</div>
+          <p class="add-hint">In the same Self Client → <strong>Generate Code</strong> tab, use scope <code>ZohoMail.accounts.READ,ZohoMail.folders.ALL,ZohoMail.messages.ALL</code>, create a code, and paste it below. (Log into the account you want to connect first.) This scope enables reading, sending, and moving/deleting mail.</p>
+          <div class="compose-field"><span class="cf-label">Grant code</span>
+            <input type="text" id="connect-code" placeholder="Paste grant code" autocomplete="off" />
+          </div>
+          <div class="add-status" id="connect-status"></div>
+          <div class="add-actions">
+            <button class="send-btn" id="connect-btn" type="button">Connect</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- New folder modal -->
+  <div id="folder-modal" class="hidden">
+    <div class="folder-card" id="folder-card"><!-- rendered dynamically by renderThemeModal() --></div>
+  </div>
+
+  <!-- Command palette / search overlay -->
+  <div id="palette" class="hidden">
+    <div class="palette-card">
+      <div class="palette-input-row">
+        <svg class="palette-search-icon" width="15" height="15" viewBox="0 0 16 16" fill="none">
+          <circle cx="7" cy="7" r="4.25" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <input type="text" id="palette-input" placeholder="Search, or ask — e.g. all my receipts from Q1" autocomplete="off" spellcheck="false" />
+        <span class="palette-kbd" id="palette-kbd">↵ deep search</span>
+      </div>
+      <div class="palette-results" id="palette-results"></div>
+      <div class="palette-foot">
+        <span class="palette-status" id="palette-status"></span>
+        <span class="palette-legend">↑↓ navigate · ↵ deep search · esc close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

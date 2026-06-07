@@ -1,0 +1,49 @@
+{
+  "name": "clearkeep",
+  "productName": "ClearKeep",
+  "version": "0.0.1",
+  "description": "ClearKeep — a calm, minimal personal mail client.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "dist": "electron-builder --mac",
+    "release": "electron-builder --mac && node tools/release.js"
+  },
+  "build": {
+    "appId": "com.clearkeep.app",
+    "productName": "ClearKeep",
+    "copyright": "Copyright © 2026 ClearKeep",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "main.css",
+      "lib/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  },
+  "dependencies": {
+    "imapflow": "^1.3.5",
+    "mailparser": "^3.9.9",
+    "nodemailer": "^8.0.10"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}

@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 1024 1024">
+  <!-- Generator: Adobe Illustrator 30.4.0, SVG Export Plug-In . SVG Version: 2.1.4 Build 226)  -->
+  <defs>
+    <style>
+      .st0 {
+        filter: url(#drop-shadow-1);
+      }
+
+      .st1 {
+        fill: url(#radial-gradient);
+      }
+
+      .st2 {
+        opacity: .5;
+      }
+
+      .st2, .st3 {
+        fill: #fff;
+      }
+
+      .st3 {
+        opacity: .3;
+      }
+
+      .st4 {
+        fill: #99f1ff;
+      }
+
+      .st5 {
+        fill: url(#radial-gradient1);
+      }
+
+      .st6 {
+        fill: url(#radial-gradient6);
+      }
+
+      .st7 {
+        fill: url(#radial-gradient3);
+      }
+
+      .st8 {
+        fill: url(#radial-gradient2);
+      }
+
+      .st9 {
+        fill: url(#radial-gradient5);
+      }
+
+      .st10 {
+        fill: url(#radial-gradient4);
+      }
+    </style>
+    <radialGradient id="radial-gradient" cx="112.4" cy="811.6" fx="112.4" fy="811.6" r=".5" gradientTransform="translate(-114576 831700) scale(1024 -1024)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d7a15b"/>
+      <stop offset="1" stop-color="#d7a15b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient1" cx="112.7" cy="811.6" fx="112.7" fy="811.6" r=".6" gradientTransform="translate(-114576 831700) scale(1024 -1024)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#be8ef0"/>
+      <stop offset="1" stop-color="#be8ef0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient2" cx="112.2" cy="812.2" fx="112.2" fy="812.2" r=".7" gradientTransform="translate(-114576 831700) scale(1024 -1024)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e09b52"/>
+      <stop offset="1" stop-color="#e09b52" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient3" cx="112.1" cy="811.9" fx="112.1" fy="811.9" r=".6" gradientTransform="translate(-114576 831700) scale(1024 -1024)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#95cef3"/>
+      <stop offset="1" stop-color="#95cef3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient4" cx="112.5" cy="811.4" fx="112.5" fy="811.4" r=".6" gradientTransform="translate(-114576 831700) scale(1024 -1024)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6bf0cc"/>
+      <stop offset="1" stop-color="#6bf0cc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient5" cx="112.3" cy="811.5" fx="112.3" fy="811.5" r=".5" gradientTransform="translate(-114576 831700) scale(1024 -1024)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d2a3ef"/>
+      <stop offset="1" stop-color="#d2a3ef" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient6" cx="112.1" cy="811.4" fx="112.1" fy="811.4" r=".6" gradientTransform="translate(-114576 831700) scale(1024 -1024)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5692e1"/>
+      <stop offset="1" stop-color="#5692e1" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="drop-shadow-1" x="45" y="45" width="934" height="934" filterUnits="userSpaceOnUse">
+      <feOffset dx="0" dy="0"/>
+      <feGaussianBlur result="blur" stdDeviation="25"/>
+      <feFlood flood-color="#000" flood-opacity="1"/>
+      <feComposite in2="blur" operator="in"/>
+      <feComposite in="SourceGraphic"/>
+    </filter>
+  </defs>
+  <rect class="st4" width="1024" height="1024"/>
+  <rect class="st1" width="1024" height="1024"/>
+  <rect class="st5" width="1024" height="1024"/>
+  <rect class="st8" width="1024" height="1024"/>
+  <rect class="st7" width="1024" height="1024"/>
+  <rect class="st10" width="1024" height="1024"/>
+  <rect class="st9" width="1024" height="1024"/>
+  <rect class="st6" width="1024" height="1024"/>
+  <g class="st0">
+    <path class="st3" d="M512,903.3c-215.8,0-391.3-175.6-391.3-391.3S296.2,120.7,512,120.7s162.3,25.7,229.3,74.3c25,18.1,30.6,53.1,12.5,78.1-18.1,25-53.1,30.6-78.1,12.5-47.8-34.7-104.4-53-163.7-53-154.1,0-279.5,125.4-279.5,279.5s125.4,279.5,279.5,279.5,115.9-18.3,163.7-53c25-18.1,60-12.5,78.1,12.5,18.1,25,12.5,60-12.5,78.1-67.1,48.5-146.3,74.2-229.3,74.2ZM895,592.7c5.5-26.3,8.4-53.5,8.4-80.6s-2.8-54.3-8.3-80.7c-6.3-30.2-36-49.6-66.2-43.2-30.2,6.3-49.6,36-43.2,66.2,4,18.9,6,38.3,6,57.7s-2,38.8-6,57.6c-6.4,30.2,13,59.9,43.2,66.2,3.9.8,7.8,1.2,11.6,1.2,25.9,0,49.1-18.1,54.6-44.4Z"/>
+  </g>
+  <path class="st2" d="M512,903.3c-215.8,0-391.3-175.6-391.3-391.3S296.2,120.7,512,120.7s162.3,25.7,229.3,74.3c25,18.1,30.6,53.1,12.5,78.1-18.1,25-53.1,30.6-78.1,12.5-47.8-34.7-104.4-53-163.7-53-154.1,0-279.5,125.4-279.5,279.5s125.4,279.5,279.5,279.5,115.9-18.3,163.7-53c25-18.1,60-12.5,78.1,12.5,18.1,25,12.5,60-12.5,78.1-67.1,48.5-146.3,74.2-229.3,74.2ZM895,592.7c5.5-26.3,8.4-53.5,8.4-80.6s-2.8-54.3-8.3-80.7c-6.3-30.2-36-49.6-66.2-43.2-30.2,6.3-49.6,36-43.2,66.2,4,18.9,6,38.3,6,57.7s-2,38.8-6,57.6c-6.4,30.2,13,59.9,43.2,66.2,3.9.8,7.8,1.2,11.6,1.2,25.9,0,49.1-18.1,54.6-44.4Z"/>
+</svg>

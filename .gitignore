@@ -1,0 +1,6 @@
+node_modules/
+dist/
+tools/zoho-creds.json
+tools/zoho-tokens.json
+*.log
+.DS_Store
